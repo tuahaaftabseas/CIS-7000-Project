@@ -108,8 +108,6 @@ contract Auction {
     function endAuction() public onlyOwner isActive
     {
         active = 0;
-        
-        highestBid = 0; // Highest bid reset to 0
     }
 
     function makeBid() public payable isActive
@@ -137,6 +135,8 @@ contract Auction {
 
         nftCollection.transferFrom(address(this), highestBidder, nftTokenId);
 
+        highestBidder = owner;
+        highestBid = 0; // Highest bid reset to 0
         nftTokenId = 0; // Reseting token ID
     }
 
