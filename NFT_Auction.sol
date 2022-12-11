@@ -67,8 +67,11 @@ contract GlobalWarmingNFTCollection is ERC721URIStorage, Ownable {
 contract Auction {
     address payable public owner;
 
-    uint256 public startTime;
-    uint256 public endTime;
+    // Using this to check if contract is active or not for now.
+    uint active;
+
+    // uint256 public startTime;
+    // uint256 public endTime;
 
     address payable public highestBidder;
     uint256 public highestBid;
@@ -97,11 +100,12 @@ contract Auction {
         // The auction is transffered the ownership of the minted token.
         // The auction keeps track of the latest minted auction using the nftTokenId
         // This token ID is used to tranfer the current token for auction to the highest bidder
-        nftTokenId = nftCollection.mintNFT(); 
+        nftCollection.mintNFT(); 
+        nftTokenId = nftCollection.latestIssuedTokenNo();
     }
 
-    function latestIssuedTokenNo() public view onlyOwner returns (uint) {
-        return nftCollection.latestIssuedTokenNo();
+    function currentAuctionedTokenId() public view onlyOwner returns (uint) {
+        return nftTokenId;
     }
 
     modifier onlyOwner() {
@@ -110,27 +114,38 @@ contract Auction {
     }
 
     modifier isActive() {
-        require(
-            block.timestamp > startTime && startTime > 0 && endTime == 0,
-            "Auction not yet active"
-        );
+        require(active == 1, "auction is closed");
+
+        // require(
+        //     block.timestamp > startTime && startTime > 0 && endTime == 0,
+        //     "Auction not yet active"
+        // );
         _;
     }
 
     modifier isClosed() {
-        require(
-            block.timestamp > endTime && endTime > 0,
-            "Can't close the auction until its open"
-        );
+        require(active == 0, "auction is currently active");
+
+        // require(
+        //     block.timestamp > endTime && endTime > 0,
+        //     "Can't close the auction until its open"
+        // );
         _;
     }
 
-    function startAuction() public onlyOwner {
+    modifier NFTExists() {
+        require(nftTokenId != 0, "auction does not possess an NFT for auction");
+        _;
+    }
+
+    function startAuction() public onlyOwner isClosed NFTExists {
         /* 
             Start the auction by setting the startTime variable
             Permissions - only the owner should be allowed to start the auction.
          */
-        startTime = block.timestamp;
+        // startTime = block.timestamp;
+
+        active = 1;
     }
 
     function endAuction() public onlyOwner isActive
@@ -139,7 +154,9 @@ contract Auction {
             End the auction by setting the startTime variable
             Permissions - only the owner should be allowed to end the auction.
          */
-        endTime = block.timestamp;
+        // endTime = block.timestamp;
+
+        active = 0;
 
         // Highest bid reset to 0
         highestBid = 0;
@@ -155,16 +172,18 @@ contract Auction {
         );
 
         // ===> Check for reentrancy vulnerability here
-        payable(highestBidder).transfer(highestBid);
-
+        if (highestBid != 0) {
+            payable(highestBidder).transfer(highestBid);
+        }
+        
         highestBid = msg.value;
         highestBidder = payable(msg.sender);
     }
 
 
-    function payoutWinner() public onlyOwner isClosed
+    function payoutWinner() public onlyOwner isClosed NFTExists
     {
-        require(nftTokenId != 0);
+        // require(nftTokenId != 0, "NFT token ID is 0");
 
         nftCollection.transferFrom(address(this), highestBidder, nftTokenId);
 
@@ -188,4 +207,17 @@ contract Auction {
     4) It can create an NFT and keep it for auction
     5) If the tempoerature rises, it can close out the previous auction, payout the winner
     6) Start again from point 4
+*/
+
+/*
+    Sample sequence of transactions after deploying contract
+    1) mint_NFT_for_Auction
+    2) startAuction
+    3) makeBid (using user other than owner)
+    4) closeAuction
+    5) payoutWinner
+    6) start from step 1
+
+    To check the token ID for current NFT in auction, use the currentAuctionedTokenId function
+
 */
