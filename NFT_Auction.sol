@@ -59,142 +59,150 @@ contract GlobalWarmingNFTCollection is ERC721URIStorage, Ownable {
 
 
 
-// Below contract taken from: https://docs.soliditylang.org/en/v0.8.17/solidity-by-example.html?highlight=auction#simple-open-auction
+// Below contract taken from: HW1
 
-contract SimpleAuction {
-    // Parameters of the auction. Times are either
-    // absolute unix timestamps (seconds since 1970-01-01)
-    // or time periods in seconds.
-    address payable public beneficiary;
-    uint public auctionEndTime;
 
-    // Current state of the auction.
-    address public highestBidder;
-    uint public highestBid;
+contract Auction {
+    address payable public owner;
 
-    // Allowed withdrawals of previous bids
-    mapping(address => uint) pendingReturns;
+    uint256 public startTime;
+    uint256 public endTime;
 
-    // Set to true at the end, disallows any change.
-    // By default initialized to `false`.
-    bool ended;
+    address payable public highestBidder;
+    uint256 public highestBid;
 
-    // Events that will be emitted on changes.
-    event HighestBidIncreased(address bidder, uint amount);
-    event AuctionEnded(address winner, uint amount); 
+    GlobalWarmingNFTCollection nftCollection;
+    uint256 nftTokenId;
 
-    // Errors that describe failures..
+    mapping(address => uint256) public fundsPerBidder;
 
-    // The triple-slash comments are so-called natspec
-    // comments. They will be shown when the user
-    // is asked to confirm a transaction or
-    // when an error is displayed.
+    event Withdrawal(uint256 amount, uint256 when);
 
-    /// The auction has already ended.
-    error AuctionAlreadyEnded();
-    /// There is already a higher or equal bid.
-    error BidNotHighEnough(uint highestBid);
-    /// The auction has not ended yet.
-    error AuctionNotYetEnded();
-    /// The function auctionEnd has already been called.
-    error AuctionEndAlreadyCalled();
+    constructor(address _nft, uint256 _id) {
+        nftCollection = new GlobalWarmingNFTCollection(_nft);
+        nftTokenId = _id;
 
-    /// Create a simple auction with `biddingTime`
-    /// seconds bidding time on behalf of the
-    /// beneficiary address `beneficiaryAddress`.
-    constructor(
-        uint biddingTime,
-        address payable beneficiaryAddress
-    ) {
-        beneficiary = beneficiaryAddress;
-        auctionEndTime = block.timestamp + biddingTime;
+        owner = payable(msg.sender);
     }
 
-    /// Bid on the auction with the value sent
-    /// together with this transaction.
-    /// The value will only be refunded if the
-    /// auction is not won.
-    function bid() external payable {
-        // No arguments are necessary, all
-        // information is already part of
-        // the transaction. The keyword payable
-        // is required for the function to
-        // be able to receive Ether.
+    modifier onlyOwner() {
+        require(msg.sender == owner, "sender is not owner");
+        _;
+    }
 
-        // Revert the call if the bidding
-        // period is over.
-        if (block.timestamp > auctionEndTime)
-            revert AuctionAlreadyEnded();
+    modifier isActive() {
+        require(
+            block.timestamp > startTime && startTime > 0 && endTime == 0,
+            "Auction not yet active"
+        );
+        _;
+    }
 
-        // If the bid is not higher, send the
-        // money back (the revert statement
-        // will revert all changes in this
-        // function execution including
-        // it having received the money).
-        if (msg.value <= highestBid)
-            revert BidNotHighEnough(highestBid);
+    modifier isClosed() {
+        require(
+            block.timestamp > endTime && endTime > 0,
+            "Can't close the auction until its open"
+        );
+        _;
+    }
 
-        if (highestBid != 0) {
-            // Sending back the money by simply using
-            // highestBidder.send(highestBid) is a security risk
-            // because it could execute an untrusted contract.
-            // It is always safer to let the recipients
-            // withdraw their money themselves.
-            pendingReturns[highestBidder] += highestBid;
-        }
-        highestBidder = msg.sender;
+    function startAuction() public onlyOwner {
+        /* 
+            Start the auction by setting the startTime variable
+            Permissions - only the owner should be allowed to start the auction.
+         */
+
+        startTime = block.timestamp;
+    }
+
+    function endAuction() public onlyOwner isActive
+    {
+        /* 
+            End the auction by setting the startTime variable
+            Permissions - only the owner should be allowed to end the auction.
+         */
+
+        endTime = block.timestamp;
+    }
+
+    function makeBid() public payable isActive
+    {
+        /* 
+            Only allow the bid to go through if it is higher than the current highest bid and the bidder has not yet bid.
+            Set the highestBidder, and highestBid variables accordingly.
+            
+            Update the fundsPerBidder map.
+         */
+
+        require(fundsPerBidder[msg.sender] == 0);
+
+        require(
+            msg.value > highestBid,
+            "New bid should be higher than current highest bid"
+        );
+
         highestBid = msg.value;
-        emit HighestBidIncreased(msg.sender, msg.value);
+        highestBidder = payable(msg.sender);
+
+        fundsPerBidder[msg.sender] = msg.value;
     }
 
-    /// Withdraw a bid that was overbid.
-    function withdraw() external returns (bool) {
-        uint amount = pendingReturns[msg.sender];
-        if (amount > 0) {
-            // It is important to set this to zero because the recipient
-            // can call this function again as part of the receiving call
-            // before `send` returns.
-            pendingReturns[msg.sender] = 0;
+    function upBid() public payable isActive
+    {
+        /* 
+            upBid will update the bidder's bid to their current bid + the msg.value being added.
+            Only allow the upBid to go through if their new bid price is higher than the current bid and they have already bid. 
 
-            // msg.sender is not of type `address payable` and must be
-            // explicitly converted using `payable(msg.sender)` in order
-            // use the member function `send()`.
-            if (!payable(msg.sender).send(amount)) {
-                // No need to call throw here, just reset the amount owing
-                pendingReturns[msg.sender] = amount;
-                return false;
-            }
-        }
-        return true;
+            Set the highestBidder, and highestBid variables accordingly.
+            
+            Update the fundsPerBidder map.
+
+        */
+
+        require(fundsPerBidder[msg.sender] > 0 && (fundsPerBidder[msg.sender] + msg.value) > highestBid);
+        
+        highestBid = fundsPerBidder[msg.sender] + msg.value;
+        highestBidder = payable(msg.sender);
+
+        fundsPerBidder[msg.sender] = msg.value;
+        
     }
 
-    /// End the auction and send the highest bid
-    /// to the beneficiary.
-    function auctionEnd() external {
-        // It is a good guideline to structure functions that interact
-        // with other contracts (i.e. they call functions or send Ether)
-        // into three phases:
-        // 1. checking conditions
-        // 2. performing actions (potentially changing conditions)
-        // 3. interacting with other contracts
-        // If these phases are mixed up, the other contract could call
-        // back into the current contract and modify the state or cause
-        // effects (ether payout) to be performed multiple times.
-        // If functions called internally include interaction with external
-        // contracts, they also have to be considered interaction with
-        // external contracts.
+    function refund() public isClosed
+    {
+        /* 
+            For the refunds, the loser will individually call this function.
+            Refunds won't be made to all losers in a batch. You will see in Part 3 why that is a bad design pattern.
+            Design this function such that only the msg.sender is refunded. 
+        
+            Bidders can refund themselves only when the auction is closed.
+            Only allow the auction losers to be refunded.
 
-        // 1. Conditions
-        if (block.timestamp < auctionEndTime)
-            revert AuctionNotYetEnded();
-        if (ended)
-            revert AuctionEndAlreadyCalled();
+            Update the fundsPerBidder mapping and transfer the refund to the bidder.
+            
+            Hint 1: You only need a reciever's public key to send them ETH. 
+            Hint 2: Use the solidity transfer function to send the funds. 
+        */
 
-        // 2. Effects
-        ended = true;
-        emit AuctionEnded(highestBidder, highestBid);
+        require(fundsPerBidder[msg.sender] > 0);
+        require(msg.sender != highestBidder);
 
-        // 3. Interaction
-        beneficiary.transfer(highestBid);
+        payable(msg.sender).transfer(fundsPerBidder[msg.sender]);
+        fundsPerBidder[msg.sender] = 0;
     }
+
+    function payoutWinner() public onlyOwner isClosed
+    {
+        fundsPerBidder[highestBidder] = 0;
+        nftCollection.enterAddressIntoBook("auction");
+        nftCollection.mintNFT();
+        nftCollection.transferFrom(address(this), highestBidder, nftTokenId);
+    }
+
+    // Verify logic for below function
+    function withdrawFunds() public onlyOwner isClosed
+    {
+        payable(msg.sender).transfer(address(this).balance);
+    }
+
 }
