@@ -11,9 +11,10 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 // Below contract adapted from deployed HW0 contract: https://goerli.etherscan.io/address/0x345565c62EFB2859769b6Ee887577123C550a6Ff
 contract GlobalWarmingNFTCollection is ERC721URIStorage, Ownable {
 
-    // Similar string can be used as a reference for off chain storage of NFT related data like videos, images
-    // string private URI = "ipfs://QmZT2jjJYKQ1SbeEo4BzaSwghJyxKqjMoCvn64puyGXQCM";
-    string private URI = ""; 
+    // Similar base string can be used as a reference for off chain storage of NFT related data like videos, images
+    // string private URI = "ipfs://QmZT2jjJYKQ1SbeEo4BzaSwghJyxKqjMoCvn64puyGXQCM"; 
+    // Token number can be appended to this base URI befor passing to _setTokenURI()
+    string private baseURI = ""; 
 
     // Token number to keep track of the tokens issues for this NFT
     // An NFT is recognized by the token contract address and token ID
@@ -35,7 +36,7 @@ contract GlobalWarmingNFTCollection is ERC721URIStorage, Ownable {
         _mint(msg.sender, newItemId);
 
         // This sets the URI for the token. The URI can be used to access off-chain resources linked with the token.
-        _setTokenURI(newItemId, URI);
+        _setTokenURI(newItemId, baseURI);
 
         // Returns tokenNo to the auction contract so the auction contract can keep track of the current NFT
         return tokenNo;     
@@ -65,19 +66,14 @@ contract GlobalWarmingNFTCollection is ERC721URIStorage, Ownable {
 
 */
 contract Auction {
+    // Public variables can be access without the need of getter functions
     address payable public owner;
-
-    // Using this to check if contract is active or not for now.
-    uint active;
-
-    // uint256 public startTime;
-    // uint256 public endTime;
-
+    uint public active; // Using this to check if contract is active or not for now.
     address payable public highestBidder;
     uint256 public highestBid;
 
     GlobalWarmingNFTCollection nftCollection;
-    uint256 nftTokenId;
+    uint256 public nftTokenId;
 
     event Withdrawal(uint256 amount, uint256 when);
 
@@ -88,6 +84,7 @@ contract Auction {
         highestBidder = owner;
     }
     
+    // Getters
     function nftCollectionAddress() public view onlyOwner returns (address) {
         return address(nftCollection);
     }
@@ -104,62 +101,13 @@ contract Auction {
         nftTokenId = nftCollection.latestIssuedTokenNo();
     }
 
-    function currentAuctionedTokenId() public view onlyOwner returns (uint) {
-        return nftTokenId;
-    }
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "sender is not owner");
-        _;
-    }
-
-    modifier isActive() {
-        require(active == 1, "auction is closed");
-
-        // require(
-        //     block.timestamp > startTime && startTime > 0 && endTime == 0,
-        //     "Auction not yet active"
-        // );
-        _;
-    }
-
-    modifier isClosed() {
-        require(active == 0, "auction is currently active");
-
-        // require(
-        //     block.timestamp > endTime && endTime > 0,
-        //     "Can't close the auction until its open"
-        // );
-        _;
-    }
-
-    modifier NFTExists() {
-        require(nftTokenId != 0, "auction does not possess an NFT for auction");
-        _;
-    }
-
     function startAuction() public onlyOwner isClosed NFTExists {
-        /* 
-            Start the auction by setting the startTime variable
-            Permissions - only the owner should be allowed to start the auction.
-         */
-        // startTime = block.timestamp;
-
         active = 1;
     }
 
     function endAuction() public onlyOwner isActive
     {
-        /* 
-            End the auction by setting the startTime variable
-            Permissions - only the owner should be allowed to end the auction.
-         */
-        // endTime = block.timestamp;
-
         active = 0;
-
-        // Highest bid reset to 0
-        highestBid = 0;
     }
 
     function makeBid() public payable isActive
@@ -187,7 +135,30 @@ contract Auction {
 
         nftCollection.transferFrom(address(this), highestBidder, nftTokenId);
 
+        highestBidder = owner;
+        highestBid = 0; // Highest bid reset to 0
         nftTokenId = 0; // Reseting token ID
+    }
+
+    // Modifiers
+    modifier onlyOwner() {
+        require(msg.sender == owner, "sender is not owner");
+        _;
+    }
+
+    modifier isActive() {
+        require(active == 1, "auction is closed");
+        _;
+    }
+
+    modifier isClosed() {
+        require(active == 0, "auction is currently active");
+        _;
+    }
+
+    modifier NFTExists() {
+        require(nftTokenId != 0, "auction does not possess an NFT for auction");
+        _;
     }
 
     // Verify logic for below function. May not be needed
@@ -219,5 +190,6 @@ contract Auction {
     6) start from step 1
 
     To check the token ID for current NFT in auction, use the currentAuctionedTokenId function
-
 */
+
+// Current
