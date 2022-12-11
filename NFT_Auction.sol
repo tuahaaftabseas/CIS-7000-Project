@@ -81,9 +81,9 @@ contract SimpleAuction {
 
     // Events that will be emitted on changes.
     event HighestBidIncreased(address bidder, uint amount);
-    event AuctionEnded(address winner, uint amount);
+    event AuctionEnded(address winner, uint amount); 
 
-    // Errors that describe failures.
+    // Errors that describe failures..
 
     // The triple-slash comments are so-called natspec
     // comments. They will be shown when the user
