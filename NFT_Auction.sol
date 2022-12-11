@@ -18,10 +18,12 @@ contract GlobalWarmingNFTCollection is ERC721URIStorage, Ownable {
     uint256 private tokenNo;
 
     constructor() ERC721("Global Warming NFT Collection", "GW_NFT") {
-
+        
+        AddressBook[msg.sender] = "Auction Contract";
+    
     }
 
-    function mintNFT() public isInAddressBook(msg.sender)  {
+    function mintNFT() public isInAddressBook(msg.sender) returns (uint) {
         require (tokenNo + 1 > tokenNo);
         tokenNo++;
         
@@ -29,33 +31,22 @@ contract GlobalWarmingNFTCollection is ERC721URIStorage, Ownable {
         
         _mint(msg.sender, newItemId);
         _setTokenURI(newItemId, URI);
+
+        return tokenNo;     
+    }
+
+    function latestIssuedTokenNo() public returns (uint) {
+        return tokenNo;
     }
 
     mapping (address => string) public AddressBook ;
 
-    function enterAddressIntoBook(string memory name) public {
-        AddressBook[msg.sender] = name;
-    }
 
     modifier isInAddressBook(address addr) {
         require (bytes(AddressBook[addr]).length > 0);
         _;
     }    
 }
-
-
-// interface NFT {
-//     function mintNFT() external;
-
-//     function enterAddressIntoBook(string memory) external;
-
-//     function transferFrom(
-//         address,
-//         address,
-//         uint256
-//     ) external;
-// }
-
 
 
 
@@ -74,15 +65,32 @@ contract Auction {
     GlobalWarmingNFTCollection nftCollection;
     uint256 nftTokenId;
 
-    mapping(address => uint256) public fundsPerBidder;
-
     event Withdrawal(uint256 amount, uint256 when);
 
-    constructor(address _nft, uint256 _id) {
-        nftCollection = new GlobalWarmingNFTCollection(_nft);
-        nftTokenId = _id;
+    constructor() {
+        nftCollection = new GlobalWarmingNFTCollection();
 
         owner = payable(msg.sender);
+        highestBidder = owner;
+    }
+    
+    function mint_NFT_for_Auction() public isClosed  {  
+        require(nftTokenId == 0); // This is set to 0 when the winner has been payed out
+
+        // Minting new NFT token for auction using the GlobalWarmingNFTCollection. 
+        // The auction is transffered the ownership of the minted token.
+        // The auction keeps track of the latest minted auction using the nftTokenId
+        // This token ID is used to tranfer the current token for auction to the highest bidder
+        nftTokenId = nftCollection.mintNFT(); 
+    
+    }
+
+    function latestIssuedTokenNo() public returns (uint) {
+        return nftCollection.latestIssuedTokenNo();
+    }
+
+    function nftmanager() external view returns (address) {
+        return address(nftCollection);
     }
 
     modifier onlyOwner() {
@@ -111,7 +119,6 @@ contract Auction {
             Start the auction by setting the startTime variable
             Permissions - only the owner should be allowed to start the auction.
          */
-
         startTime = block.timestamp;
     }
 
@@ -121,82 +128,35 @@ contract Auction {
             End the auction by setting the startTime variable
             Permissions - only the owner should be allowed to end the auction.
          */
-
         endTime = block.timestamp;
+
+        highestBid = 0;
     }
 
     function makeBid() public payable isActive
     {
-        /* 
-            Only allow the bid to go through if it is higher than the current highest bid and the bidder has not yet bid.
-            Set the highestBidder, and highestBid variables accordingly.
-            
-            Update the fundsPerBidder map.
-         */
-
-        require(fundsPerBidder[msg.sender] == 0);
+        require(msg.sender != highestBidder, "Sender is the highest bidder");
 
         require(
             msg.value > highestBid,
             "New bid should be higher than current highest bid"
         );
 
+        // Check for reentrancy vulnerability here
+        payable(highestBidder).transfer(highestBid);
+
         highestBid = msg.value;
         highestBidder = payable(msg.sender);
-
-        fundsPerBidder[msg.sender] = msg.value;
     }
 
-    function upBid() public payable isActive
-    {
-        /* 
-            upBid will update the bidder's bid to their current bid + the msg.value being added.
-            Only allow the upBid to go through if their new bid price is higher than the current bid and they have already bid. 
-
-            Set the highestBidder, and highestBid variables accordingly.
-            
-            Update the fundsPerBidder map.
-
-        */
-
-        require(fundsPerBidder[msg.sender] > 0 && (fundsPerBidder[msg.sender] + msg.value) > highestBid);
-        
-        highestBid = fundsPerBidder[msg.sender] + msg.value;
-        highestBidder = payable(msg.sender);
-
-        fundsPerBidder[msg.sender] = msg.value;
-        
-    }
-
-    function refund() public isClosed
-    {
-        /* 
-            For the refunds, the loser will individually call this function.
-            Refunds won't be made to all losers in a batch. You will see in Part 3 why that is a bad design pattern.
-            Design this function such that only the msg.sender is refunded. 
-        
-            Bidders can refund themselves only when the auction is closed.
-            Only allow the auction losers to be refunded.
-
-            Update the fundsPerBidder mapping and transfer the refund to the bidder.
-            
-            Hint 1: You only need a reciever's public key to send them ETH. 
-            Hint 2: Use the solidity transfer function to send the funds. 
-        */
-
-        require(fundsPerBidder[msg.sender] > 0);
-        require(msg.sender != highestBidder);
-
-        payable(msg.sender).transfer(fundsPerBidder[msg.sender]);
-        fundsPerBidder[msg.sender] = 0;
-    }
 
     function payoutWinner() public onlyOwner isClosed
     {
-        fundsPerBidder[highestBidder] = 0;
-        nftCollection.enterAddressIntoBook("auction");
-        nftCollection.mintNFT();
+        require(nftTokenId != 0);
+
         nftCollection.transferFrom(address(this), highestBidder, nftTokenId);
+
+        nftTokenId = 0; // Reseting token ID
     }
 
     // Verify logic for below function
@@ -204,5 +164,4 @@ contract Auction {
     {
         payable(msg.sender).transfer(address(this).balance);
     }
-
 }
